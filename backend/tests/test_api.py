@@ -1,10 +1,31 @@
 import io
 
+import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
+from app import model
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def stub_model(monkeypatch):
+    """Подменяем тяжёлую модель на фиктивный результат, но сохраняем проверку
+    декодируемости изображения, как это делает реальный model.classify."""
+
+    def fake_classify(image_bytes: bytes):
+        Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return "NORMAL", 0.87
+
+    monkeypatch.setattr(model, "classify", fake_classify)
+
+
+def _fake_jpeg_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (32, 32), color="white").save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 def test_health():
@@ -14,10 +35,9 @@ def test_health():
 
 
 def test_upload_status_result_flow():
-    fake_image = io.BytesIO(b"fake-image-bytes")
     response = client.post(
         "/api/images/upload",
-        files={"file": ("test.jpg", fake_image, "image/jpeg")},
+        files={"file": ("test.jpg", _fake_jpeg_bytes(), "image/jpeg")},
     )
     assert response.status_code == 200
     body = response.json()
@@ -31,15 +51,22 @@ def test_upload_status_result_flow():
     result_response = client.get(f"/api/images/{image_id}/result")
     assert result_response.status_code == 200
     result = result_response.json()
-    assert "label" in result
+    assert result["label"] == "NORMAL"
     assert 0.0 <= result["confidence"] <= 1.0
 
 
-def test_upload_rejects_non_image():
-    fake_file = io.BytesIO(b"not an image")
+def test_upload_rejects_non_image_content_type():
     response = client.post(
         "/api/images/upload",
-        files={"file": ("test.txt", fake_file, "text/plain")},
+        files={"file": ("test.txt", b"not an image", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+def test_upload_rejects_corrupt_image_bytes():
+    response = client.post(
+        "/api/images/upload",
+        files={"file": ("test.jpg", b"not actually a jpeg", "image/jpeg")},
     )
     assert response.status_code == 400
 

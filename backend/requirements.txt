@@ -1,3 +1,10 @@
 fastapi
 uvicorn
 python-multipart
+timm
+huggingface_hub
+pillow
+numpy
+
+# torch ставится отдельно (CPU-сборка), см. README.md:
+# pip install torch --index-url https://download.pytorch.org/whl/cpu

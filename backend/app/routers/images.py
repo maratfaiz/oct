@@ -1,16 +1,12 @@
-import random
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
-from app import storage
+from app import model, storage
 from app.schemas import ResultResponse, StatusResponse, UploadResponse
 
 router = APIRouter(prefix="/api/images", tags=["images"])
-
-# Заглушка вместо реальной модели: реальный инференс появится на этапе
-# "Дообучение и интеграция модели" (docs/PLAN.md), после выбора базовой модели.
-_STUB_LABELS = ["normal", "abnormal"]
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -18,13 +14,19 @@ async def upload_image(file: UploadFile) -> UploadResponse:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Файл должен быть изображением")
 
+    image_bytes = await file.read()
+    try:
+        label, confidence = await run_in_threadpool(model.classify, image_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать изображение") from exc
+
     image_id = str(uuid.uuid4())
     storage.save(
         image_id,
         {
             "status": "done",
-            "label": random.choice(_STUB_LABELS),
-            "confidence": round(random.uniform(0.5, 0.99), 2),
+            "label": label,
+            "confidence": confidence,
         },
     )
     return UploadResponse(image_id=image_id, status="done")
