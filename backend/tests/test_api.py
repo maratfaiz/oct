@@ -1,10 +1,11 @@
 import io
+import os
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app import model
+from app import model, storage
 from app.main import app
 
 client = TestClient(app)
@@ -20,6 +21,14 @@ def stub_model(monkeypatch):
         return "NORMAL", 0.87
 
     monkeypatch.setattr(model, "classify", fake_classify)
+
+
+@pytest.fixture(autouse=True)
+def isolated_storage(monkeypatch, tmp_path):
+    """Каждый тест работает со своей БД и папкой загрузок, а не с реальными
+    данными проекта."""
+    monkeypatch.setattr(storage, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(storage, "UPLOADS_DIR", str(tmp_path / "uploads"))
 
 
 def _fake_jpeg_bytes() -> bytes:
@@ -53,6 +62,8 @@ def test_upload_status_result_flow():
     result = result_response.json()
     assert result["label"] == "NORMAL"
     assert 0.0 <= result["confidence"] <= 1.0
+
+    assert os.path.exists(os.path.join(storage.UPLOADS_DIR, image_id))
 
 
 def test_upload_rejects_non_image_content_type():

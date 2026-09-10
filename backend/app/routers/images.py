@@ -21,6 +21,7 @@ async def upload_image(file: UploadFile) -> UploadResponse:
         raise HTTPException(status_code=400, detail="Не удалось прочитать изображение") from exc
 
     image_id = str(uuid.uuid4())
+    storage.save_image_file(image_id, image_bytes)
     storage.save(
         image_id,
         {

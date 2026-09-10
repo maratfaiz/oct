@@ -10,6 +10,9 @@ venv/
 node_modules/
 dist/
 
+# Backend runtime data (SQLite DB + загруженные изображения)
+backend/data/
+
 # OS / editors
 .DS_Store
 .idea/
