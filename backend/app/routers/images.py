@@ -46,4 +46,8 @@ async def get_result(image_id: str) -> ResultResponse:
     record = storage.get(image_id)
     if record is None:
         raise HTTPException(status_code=404, detail="image_id не найден")
-    return ResultResponse(label=record["label"], confidence=record["confidence"])
+    return ResultResponse(
+        label=record["label"],
+        confidence=record["confidence"],
+        uncertain=model.is_uncertain(record["confidence"]),
+    )

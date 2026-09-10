@@ -14,3 +14,4 @@ class StatusResponse(BaseModel):
 class ResultResponse(BaseModel):
     label: str
     confidence: float
+    uncertain: bool
