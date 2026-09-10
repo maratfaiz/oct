@@ -1,0 +1,72 @@
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  margin: 0;
+}
+
+.upload-zone {
+  border: 2px dashed #888;
+  border-radius: 12px;
+  padding: 3rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.upload-zone--active {
+  border-color: #4f46e5;
+  background-color: rgba(79, 70, 229, 0.06);
+}
+
+.status-message {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.status-message--error {
+  color: #dc2626;
+}
+
+.result-view {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+}
+
+.result-view__confidence {
+  font-weight: 600;
+}
+
+.disclaimer {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.history {
+  margin-top: 2.5rem;
+}
+
+.history ul {
+  list-style: none;
+  padding: 0;
+}
+
+.history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+  font-size: 0.9rem;
+}
