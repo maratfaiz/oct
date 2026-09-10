@@ -1,69 +1,86 @@
-"""Загрузка и инференс модели bitfount/RETFound_MAE_OCT_CNV_DME_DRU.
+"""Загрузка и инференс модели tomalmog/oct-retinal-classifier.
 
-Модель дообучена на датасете Kermany (OCT B-сканы сетчатки) под 4 класса.
-Лицензия весов — CC BY-NC 4.0 (только некоммерческое использование).
-
-Порядок классов и препроцессинг взяты из рабочего референсного инференса
-(HF Space hadi6681/oct4class, использующий эту же модель):
-https://huggingface.co/spaces/hadi6681/oct4class/blob/main/app.py
+MIT-лицензия (коммерческое использование разрешено), дообучена на
+датасете Kermany2018 под 4 класса. Архитектура и препроцессинг взяты
+из рабочего model.py в самом репозитории модели:
+https://huggingface.co/tomalmog/oct-retinal-classifier/blob/main/model.py
 """
 
 import io
+import os
+import urllib.request
 
-import numpy as np
 import timm
 import torch
-from huggingface_hub import hf_hub_download
+import torch.nn as nn
 from PIL import Image
+from torchvision import transforms
 
-MODEL_REPO = "bitfount/RETFound_MAE_OCT_CNV_DME_DRU"
-ARCH = "vit_large_patch16_224"
+MODEL_URL = "https://huggingface.co/tomalmog/oct-retinal-classifier/resolve/main/pytorch_model.bin"
+CACHE_PATH = os.path.join(os.path.expanduser("~/.cache/octera-model"), "oct-retinal-classifier.bin")
 CLASSES = ["CNV", "DME", "DRUSEN", "NORMAL"]
 
-IMG_SIZE = 224
-MEAN = (0.5, 0.5, 0.5)
-STD = (0.5, 0.5, 0.5)
-CROP_PCT = 0.9
-RESIZE_TO = round(IMG_SIZE / CROP_PCT)
+_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
 
-_model: torch.nn.Module | None = None
+
+class OCTClassifier(nn.Module):
+    """EfficientNet-B3 backbone + кастомная классификационная голова."""
+
+    def __init__(self):
+        super().__init__()
+        self.backbone = timm.create_model("efficientnet_b3", pretrained=False, num_classes=0, global_pool="")
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(p=0.3),
+            nn.Linear(1536, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.15),
+            nn.Linear(512, 4),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.backbone(x)
+        features = self.global_pool(features)
+        return self.classifier(features)
 
 
-def _load_model() -> torch.nn.Module:
-    model = timm.create_model(ARCH, num_classes=len(CLASSES), global_pool="token", pretrained=False)
-    ckpt_path = hf_hub_download(repo_id=MODEL_REPO, filename="pytorch_model.bin")
-    state = torch.load(ckpt_path, map_location="cpu")
-    if isinstance(state, dict) and "state_dict" in state:
-        state = state["state_dict"]
-    state = {(k[7:] if k.startswith("module.") else k): v for k, v in state.items()}
-    model.load_state_dict(state, strict=False)
+_model: OCTClassifier | None = None
+
+
+def _download_weights() -> str:
+    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+    if not os.path.exists(CACHE_PATH):
+        urllib.request.urlretrieve(MODEL_URL, CACHE_PATH)
+    return CACHE_PATH
+
+
+def _load_model() -> OCTClassifier:
+    weights_path = _download_weights()
+    model = OCTClassifier()
+    state_dict = torch.load(weights_path, map_location="cpu")
+    model.load_state_dict(state_dict)
     model.eval()
     return model
 
 
-def get_model() -> torch.nn.Module:
+def get_model() -> OCTClassifier:
     global _model
     if _model is None:
         _model = _load_model()
     return _model
 
 
-def _preprocess(image: Image.Image) -> torch.Tensor:
-    image = image.convert("RGB")
-    image = image.resize((RESIZE_TO, RESIZE_TO), Image.BICUBIC)
-    left = (RESIZE_TO - IMG_SIZE) // 2
-    top = (RESIZE_TO - IMG_SIZE) // 2
-    image = image.crop((left, top, left + IMG_SIZE, top + IMG_SIZE))
-    array = np.asarray(image).astype("float32") / 255.0
-    array = (array - np.array(MEAN, dtype="float32")) / np.array(STD, dtype="float32")
-    tensor = torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0)
-    return tensor
-
-
 @torch.no_grad()
 def classify(image_bytes: bytes) -> tuple[str, float]:
-    image = Image.open(io.BytesIO(image_bytes))
-    tensor = _preprocess(image)
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    tensor = _transform(image).unsqueeze(0)
     logits = get_model()(tensor)
     probs = torch.softmax(logits, dim=1)[0].tolist()
     best_idx = max(range(len(CLASSES)), key=lambda i: probs[i])
