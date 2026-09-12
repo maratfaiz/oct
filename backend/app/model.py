@@ -20,6 +20,16 @@ MODEL_URL = "https://huggingface.co/tomalmog/oct-retinal-classifier/resolve/main
 CACHE_PATH = os.path.join(os.path.expanduser("~/.cache/octera-model"), "oct-retinal-classifier.bin")
 CLASSES = ["CNV", "DME", "DRUSEN", "NORMAL"]
 
+# Порог уверенности: если max-вероятность ниже — результат считается
+# неопределённым и должен уходить на проверку врачу, а не выдаваться как есть.
+CONFIDENCE_THRESHOLD = 0.8
+
+# Температура для softmax (temperature scaling). Пока 1.0 — заявленная точность
+# модели (99.6%) измерена на Kermany2018, где известна утечка данных между
+# train/test, реальная калибровка требует размеченной выборки, которой пока нет.
+# Значение будет подобрано, когда появятся размеченные данные для валидации.
+TEMPERATURE = 1.0
+
 _transform = transforms.Compose(
     [
         transforms.Resize((224, 224)),
@@ -77,11 +87,15 @@ def get_model() -> OCTClassifier:
     return _model
 
 
+def is_uncertain(confidence: float) -> bool:
+    return confidence < CONFIDENCE_THRESHOLD
+
+
 @torch.no_grad()
 def classify(image_bytes: bytes) -> tuple[str, float]:
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     tensor = _transform(image).unsqueeze(0)
     logits = get_model()(tensor)
-    probs = torch.softmax(logits, dim=1)[0].tolist()
+    probs = torch.softmax(logits / TEMPERATURE, dim=1)[0].tolist()
     best_idx = max(range(len(CLASSES)), key=lambda i: probs[i])
     return CLASSES[best_idx], round(probs[best_idx], 4)

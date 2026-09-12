@@ -62,8 +62,26 @@ def test_upload_status_result_flow():
     result = result_response.json()
     assert result["label"] == "NORMAL"
     assert 0.0 <= result["confidence"] <= 1.0
+    assert result["uncertain"] is False
 
     assert os.path.exists(os.path.join(storage.UPLOADS_DIR, image_id))
+
+
+def test_result_flags_low_confidence_as_uncertain(monkeypatch):
+    def fake_classify(image_bytes: bytes):
+        Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return "NORMAL", 0.5
+
+    monkeypatch.setattr(model, "classify", fake_classify)
+
+    upload_response = client.post(
+        "/api/images/upload",
+        files={"file": ("test.jpg", _fake_jpeg_bytes(), "image/jpeg")},
+    )
+    image_id = upload_response.json()["image_id"]
+
+    result = client.get(f"/api/images/{image_id}/result").json()
+    assert result["uncertain"] is True
 
 
 def test_upload_rejects_non_image_content_type():
